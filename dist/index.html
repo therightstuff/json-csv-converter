@@ -1,0 +1,317 @@
+<html>
+    <head>
+		<title>Online JSON / CSV Converter</title>
+        <link rel="stylesheet" href="css/toastr.min.css" />
+
+		<script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+
+        <script src="js/json-2-csv.js"></script>
+
+        <script src="js/toastr.min.js"></script>
+
+        <script language="javascript">
+			var conversionStyle;
+			var prefixConnector;
+			var delimiter, delimiterCharacter;
+
+			function updateStyle(){
+				conversionStyle = $('input[name=conversionStyle]:checked').val();
+				localStorage.conversionStyle = conversionStyle;
+
+				prefixConnector = $('#prefixConnector').val();
+				localStorage.prefixConnector = prefixConnector;
+
+				delimiter = $('input[name=delimiter]:checked').val();
+				localStorage.delimiter = delimiter;
+				if (delimiter == 'tab') {
+					delimiterCharacter = '\t';
+				} else {
+					delimiterCharacter = $('#delimiterCharacter').val();
+					localStorage.delimiterCharacter = delimiterCharacter;
+				}
+
+			}
+
+			function showError(source, message){
+				toastr.error(message);
+				$('#txt' + source).css('border-color', 'red')
+                $('#err' + source).html(message);
+                console.error(source, message);
+				setTimeout(function(){
+					$('#txt' + source).css('border-color', 'black')
+					$('#err' + source).html('&nbsp;');
+				}, 2000);
+			}
+
+			function JSONtoCSV(){
+                updateStyle();
+                let json2csvCallback = function (err, csv) {
+                    if (err) {
+                        return showError('JSON', err.message)
+                    }
+
+                    $('#txtCSV').val(csv);
+                    saveCSV();
+                };
+                try {
+                    let parsedJson = JSON.parse($('#txtJSON').val());
+                    converter.json2csv(
+                        parsedJson,
+                        json2csvCallback,
+                        {
+                            "delimiter": {
+                                "field": delimiterCharacter
+                            }
+                        }
+					);
+					toastr.success(`JSON converted successfully`);
+                } catch (parseError) {
+                    return showError('JSON', parseError.message)
+                }
+			}
+
+            function CSVtoJSON(){
+                updateStyle();
+                let csv2jsonCallback = function (err, json) {
+                    if (err) {
+                        return showError('CSV', err.message)
+                    }
+
+                    $('#txtJSON').val(JSON.stringify(json, null, 2));
+                    saveJSON();
+                }
+                try {
+                    converter.csv2json(
+                        $('#txtCSV').val(),
+                        csv2jsonCallback,
+                        {
+                            "delimiter": {
+                                "field": delimiterCharacter
+                            }
+                        }
+					);
+					toastr.success(`CSV converted successfully`);
+                } catch (csvError) {
+                    return showError('CSV', csvError.message)
+                }
+
+                return;
+				updateStyle();
+
+				// initialize CSV line data
+				lines = $('#txtCSV').val().split('\n');
+				linesCSVlength = lines.length;
+				current = 0;
+
+				try {
+					var obj = traverseCSV(0);
+					$('#txtJSON').val(JSON.stringify(obj, null, 2));
+				} catch (conversionException){
+					showError('CSV', conversionException.message);
+				}
+
+				saveJSON();
+			}
+
+			function resizeDocument(){
+				var windowWidth = $(window).width();
+
+				var windowHeight = $(window).height();
+
+				var buttonWidth = parseInt($('#btnJSONtoCSV').css('width'));
+
+				var textareaWidth = ((windowWidth-buttonWidth)/2) - 50;
+
+				var textareaHeight = 400;
+
+				$('#txtJSON').css('width', textareaWidth).css('height', textareaHeight);
+				$('#txtCSV').css('width', textareaWidth).css('height', textareaHeight);;
+			}
+
+			function saveJSON(){
+                localStorage.json = $('#txtJSON').val();
+                updateJSONDownloadLink();
+            }
+
+            function updateJSONDownloadLink(){
+                // update download file
+                let metadata = 'data:application/octet-stream;charset=utf-8;base64,';
+                $('#jsonResultFile').attr(
+                    'href',
+                    metadata + btoa(unescape(encodeURIComponent($('#txtJSON').val())))
+                );
+
+                $('#jsonResultFile').attr(
+                    'download',
+                    $('#filenameJSON').val()
+                );
+            }
+
+			function saveCSV(){
+                localStorage.csv = $('#txtCSV').val();
+                updateCSVDownloadLink();
+            }
+
+            function updateCSVDownloadLink(){
+                // update download file
+                let metadata = 'data:application/octet-stream;charset=utf-8;base64,';
+                $('#csvResultFile').attr(
+                    'href',
+                    metadata + btoa(unescape(encodeURIComponent($('#txtCSV').val())))
+                );
+
+                $('#csvResultFile').attr(
+                    'download',
+                    $('#filenameCSV').val()
+                );
+            }
+
+			$(function() {
+				if (localStorage.conversionStyle) {
+					// load previous conversion style
+					$('input:radio[name=conversionStyle]').val([localStorage.conversionStyle]);
+					$('input:radio[name=delimiter]').val([localStorage.delimiter]);
+					$('#prefixConnector').val(localStorage.prefixConnector);
+					$('#delimiterCharacter').val(localStorage.delimiterCharacter);
+					// load previous JSON and CSV data
+                    $('#txtJSON').val(localStorage.json);
+                    updateJSONDownloadLink();
+                    $('#txtCSV').val(localStorage.csv);
+                    updateCSVDownloadLink();
+				}
+
+				// bind to resize events
+				$( window ).resize(function() {
+					resizeDocument();
+				});
+				// initialize enlarged image widths
+				resizeDocument();
+
+				// load buttons
+				$("#btnLoadJSON").click( function() {
+					var filename = $('#jsonSourceFile').val();
+					if (!filename || filename.length == 0){
+						return showError('JSON', 'Source file must be specified');
+					}
+
+					// load file contents into base64
+					var reader = new FileReader();
+					var file = $('#jsonSourceFile')[0].files[0];
+					reader.onload = function (event) {
+						console.log('json loaded');
+						var contents = event.target.result;
+						var lines = contents.split('\n');
+						$('#txtJSON').val(contents);
+						saveJSON();
+						toastr.success(`JSON file loaded successfully`);
+					};
+					reader.onerror = function (error) {
+						return showError('JSON', error);
+					};
+					reader.readAsText(file);
+					console.log('reading json');
+				});
+
+				$("#btnLoadCSV").click( function() {
+					var filename = $('#csvSourceFile').val();
+					if (!filename || filename.length == 0){
+						return showError('CSV', 'Source file must be specified');
+					}
+
+					// load file contents into base64
+					var reader = new FileReader();
+					var file = $('#csvSourceFile')[0].files[0];
+					reader.onload = function (event) {
+						console.log('csv loaded');
+						var contents = event.target.result;
+						var lines = contents.split('\n');
+						$('#txtCSV').val(contents);
+						saveCSV();
+						toastr.success(`CSV file loaded successfully`);
+					};
+					reader.onerror = function (error) {
+						return showError('CSV', error);
+					};
+					reader.readAsText(file);
+					console.log('reading csv');
+				});
+			});
+        </script>
+    </head>
+    <body>
+        <center>
+		<div style="width:500px;">
+		<h1>Online JSON / CSV Converter</h1>
+		<b>A simple web interface for converting from JSON to CSV and back using
+		<a href="https://www.npmjs.com/package/json-2-csv" target="_blank">json-2-csv</a>.
+		All data stored in browser's local storage only, no data is communicated
+		once the page has loaded.
+		<br /><br />
+		If you've found this tool useful,
+		<a href="https://www.industrialcuriosity.com/p/donate.html" target="_blank">please
+		consider making a donation</a>!</b>
+		<br />
+		<br />
+		For Microsoft Excel compatibility, simply use tab delimiters and save the file with
+		the <b>.xls</b> extension.
+		<br />
+		<br />
+		<u><b>CSV style</b></u>:
+		<table width="100%">
+			<tr>
+			<!--<td>
+				Headers<br />
+				<input type="radio" name="conversionStyle" value="prefixes" checked="checked" />Prefixes attached with <input id="prefixConnector" type="text" size="2" value="." /> (<i>Period (&quot;.&quot;) recommended</i>)
+				<br />
+				<input type="radio" name="conversionStyle" value="headers"/>Indented header rows
+			</td>-->
+			<td>
+				Column delimiter<br />
+				<input type="radio" name="delimiter" value="comma" checked="checked" />Character separated <input id="delimiterCharacter" type="text" size="2" value="," /> (<i>Comma (&quot;,&quot;) recommended</i>)
+				<br />
+				<input type="radio" name="delimiter" value="tab"/>Tab separated (<i>save with .xls for opening in Excel</i>)
+			</td>
+			</tr>
+		</table>
+		<br />
+		<br />
+		</div>
+		<hr />
+		<table width="100%">
+			<tr id="headerRow" align="center">
+				<td>
+					<h2>JSON</h2>
+					<input type="file" id="jsonSourceFile" /><button id="btnLoadJSON">Load JSON File</button>
+					<br /><br/>
+                    <input id="filenameJSON" value="download.json"/>
+                    <a id="jsonResultFile" href="data:application/octet-stream;charset=utf-8;base64,Zm9vIGJhcg==">Download JSON</a>
+					<br />
+					<span id="errJSON" style="color:red;">&nbsp;</span>
+				</td>
+				<td></td>
+				<td>
+					<h2>CSV</h2>
+					<input type="file" id="csvSourceFile" /><button id="btnLoadCSV">Load CSV File</button>
+					<br /><br/>
+                    <input id="filenameCSV" value="download.csv"/>
+                    <a id="csvResultFile" href="data:application/octet-stream;charset=utf-8;base64,Zm9vIGJhcg==">Download CSV</a>
+					<br />
+					<span id="errCSV" style="color:red;">&nbsp;</span>
+				</td>
+			</tr>
+			<tr align="center" valign="top">
+				<td>
+					<textarea id="txtJSON" onkeyup="saveJSON()" onchange="saveJSON()"></textarea>
+				</td>
+				<td align="center">
+					<button id="btnJSONtoCSV" onclick="JSONtoCSV()">JSON to CSV -&gt;</button>
+					<br /><br />
+					<button id="btnCSVtoJSON" onclick="CSVtoJSON()">&lt;- CSV to JSON</button>
+				</td>
+				<td>
+					<textarea id="txtCSV" onkeyup="saveCSV()" onchange="saveCSV()"></textarea>
+				</td>
+			</tr>
+		</table>
+    </body>
+</html>

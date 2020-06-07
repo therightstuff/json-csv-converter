@@ -1,0 +1,32 @@
+{
+  "name": "json-csv-converter",
+  "version": "1.0.0",
+  "description": "JSON / CSV conversion interface",
+  "main": "dist/index.html",
+  "scripts": {
+    "build": "node_modules/.bin/browserify src/windowJson2Csv.js -o dist/js/json-2-csv.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/therightstuff/json-csv-converter.git"
+  },
+  "keywords": [
+    "json-2-csv",
+    "web",
+    "interface",
+    "javascript",
+    "csv",
+    "json",
+    "excel"
+  ],
+  "author": "therightstuff",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/therightstuff/json-csv-converter/issues"
+  },
+  "homepage": "https://github.com/therightstuff/json-csv-converter#readme",
+  "devDependencies": {
+    "browserify": "^16.5.1",
+    "json-2-csv": "^3.7.1"
+  }
+}
