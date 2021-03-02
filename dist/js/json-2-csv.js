@@ -49,7 +49,7 @@ function generateDeepKeysList(heading, data, options) {
             return generateDeepKeysList(keyName, data[currentKey], options);
         } else if (options.expandArrayObjects && isArrayToRecurOn(data[currentKey])) {
             // If we have a nested array that we need to recur on
-            return processArrayKeys(data[currentKey], currentKey, options);
+            return processArrayKeys(data[currentKey], keyName, options);
         }
         // Otherwise return this key name since we don't have a sub document
         return keyName;
@@ -67,7 +67,7 @@ function generateDeepKeysList(heading, data, options) {
  * @returns {*}
  */
 function processArrayKeys(subArray, currentKeyPath, options) {
-    let subArrayKeys = deepKeysFromList(subArray);
+    let subArrayKeys = deepKeysFromList(subArray, options);
 
     if (!subArray.length) {
         return options.ignoreEmptyArraysWhenExpanding ? [] : [currentKeyPath];
@@ -191,81 +191,12 @@ function flatten(array) {
 }
 
 },{}],3:[function(require,module,exports){
-'use strict';
-
-module.exports = {
-    evaluatePath,
-    setPath
-};
-
-function evaluatePath(document, keyPath) {
-    if (!document) {
-        return null;
-    }
-
-    let {indexOfDot, currentKey, remainingKeyPath} = computeStateInformation(keyPath);
-
-    // If there is a '.' in the keyPath and keyPath doesn't appear in the document, recur on the subdocument
-    if (indexOfDot >= 0 && !document[keyPath]) {
-        // If there's an array at the currentKey in the document, then iterate over those items evaluating the remaining path
-        if (Array.isArray(document[currentKey])) {
-            return document[currentKey].map((doc) => evaluatePath(doc, remainingKeyPath));
-        }
-        // Otherwise, we can just recur
-        return evaluatePath(document[currentKey], remainingKeyPath);
-    } else if (Array.isArray(document)) {
-        // If this "document" is actually an array, then iterate over those items evaluating the path
-        return document.map((doc) => evaluatePath(doc, keyPath));
-    }
-
-    // Otherwise, we can just return value directly
-    return document[keyPath];
-}
-
-function setPath(document, keyPath, value) {
-    if (!document) {
-        throw new Error('No document was provided.');
-    }
-
-    let {indexOfDot, currentKey, remainingKeyPath} = computeStateInformation(keyPath);
-
-    // If there is a '.' in the keyPath, recur on the subdoc and ...
-    if (indexOfDot >= 0) {
-        if (!document[currentKey] && Array.isArray(document)) {
-            // If this is an array and there are multiple levels of keys to iterate over, recur.
-            return document.forEach((doc) => setPath(doc, keyPath, value));
-        } else if (!document[currentKey]) {
-            // If the currentKey doesn't exist yet, populate it
-            document[currentKey] = {};
-        }
-        setPath(document[currentKey], remainingKeyPath, value);
-    } else if (Array.isArray(document)) {
-        // If this "document" is actually an array, then we can loop over each of the values and set the path
-        return document.forEach((doc) => setPath(doc, remainingKeyPath, value));
-    } else {
-        // Otherwise, we can set the path directly
-        document[keyPath] = value;
-    }
-
-    return document;
-}
-
 /**
- * Helper function that returns some information necessary to evaluate or set a path
- *   based on the provided keyPath value
- * @param keyPath
- * @returns {{indexOfDot: Number, currentKey: String, remainingKeyPath: String}}
+ * @license MIT
+ * doc-path <https://github.com/mrodrig/doc-path>
+ * Copyright (c) 2015-present, Michael Rodrigues.
  */
-function computeStateInformation(keyPath) {
-    let indexOfDot = keyPath.indexOf('.');
-
-    return {
-        indexOfDot,
-        currentKey: keyPath.slice(0, indexOfDot >= 0 ? indexOfDot : undefined),
-        remainingKeyPath: keyPath.slice(indexOfDot + 1)
-    };
-}
-
+"use strict";function evaluatePath(t,r){if(!t)return null;let{dotIndex:e,key:a,remaining:i}=state(r);return e>=0&&!t[r]?Array.isArray(t[a])?t[a].map(t=>evaluatePath(t,i)):evaluatePath(t[a],i):Array.isArray(t)?t.map(t=>evaluatePath(t,r)):t[r]}function setPath(t,r,e){if(!t)throw new Error("No object was provided.");if(!r)throw new Error("No keyPath was provided.");return _sp(t,r,e)}function _sp(t,r,e){let{dotIndex:a,key:i,remaining:n}=state(r);if(r.startsWith("__proto__")||r.startsWith("constructor")||r.startsWith("prototype"))return t;if(a>=0){if(!t[i]&&Array.isArray(t))return t.forEach(t=>_sp(t,r,e));t[i]||(t[i]={}),_sp(t[i],n,e)}else{if(Array.isArray(t))return t.forEach(t=>_sp(t,n,e));t[r]=e}return t}function state(t){let r=t.indexOf(".");return{dotIndex:r,key:t.slice(0,r>=0?r:void 0),remaining:t.slice(r+1)}}module.exports={evaluatePath:evaluatePath,setPath:setPath};
 },{}],4:[function(require,module,exports){
 module.exports={
   "errors" : {
@@ -302,6 +233,7 @@ module.exports={
     "checkSchemaDifferences": false,
     "expandArrayObjects": false,
     "unwindArrays": false,
+    "useDateIso8601Format": false,
     "useLocaleFormat": false
   },
 
@@ -491,13 +423,16 @@ const Csv2Json = function(options) {
 
                 // If the start index is the current index (and since the previous character is a comma),
                 //   then the value being parsed is an empty value accordingly, add an empty string
-                let parsedValue = nextNChar === options.delimiter.eol && stateVariables.startIndex === index
-                    ? ''
+                if (nextNChar === options.delimiter.eol && stateVariables.startIndex === index) {
+                    splitLine.push('');
+                } else if (character === options.delimiter.field) {
+                    // If we reached the end of the CSV, there's no new line, and the current character is a comma
+                    // then add an empty string for the current value
+                    splitLine.push('');
+                } else {
                     // Otherwise, there's a valid value, and the start index isn't the current index, grab the whole value
-                    : csv.substr(stateVariables.startIndex);
-
-                // Push the value for the field that we were parsing
-                splitLine.push(parsedValue);
+                    splitLine.push(csv.substr(stateVariables.startIndex));
+                }
 
                 // Since the last character is a comma, there's still an additional implied field value trailing the comma.
                 //   Since this value is empty, we push an extra empty value
@@ -509,6 +444,16 @@ const Csv2Json = function(options) {
                 stateVariables.startIndex = index + eolDelimiterLength;
                 stateVariables.parsingValue = true;
                 stateVariables.insideWrapDelimiter = charAfter === options.delimiter.wrap;
+            } else if (index === lastCharacterIndex && character === options.delimiter.field) {
+                // If we reach the end of the CSV and the current character is a field delimiter
+
+                // Parse the previously seen value and add it to the line
+                let parsedValue = csv.substring(stateVariables.startIndex, index);
+                splitLine.push(parsedValue);
+
+                // Then add an empty string to the line since the last character being a field delimiter indicates an empty field
+                splitLine.push('');
+                lines.push(splitLine);
             } else if (index === lastCharacterIndex || nextNChar === options.delimiter.eol &&
                 // if we aren't inside wrap delimiters or if we are but the character before was a wrap delimiter and we didn't just see two
                 (!stateVariables.insideWrapDelimiter ||
@@ -533,7 +478,7 @@ const Csv2Json = function(options) {
                 stateVariables.insideWrapDelimiter = false;
                 stateVariables.parsingValue = false;
                 // Next iteration will substring, add the value to the line, and push the line onto the array of lines
-            } else if (character === options.delimiter.wrap && (index === 0 || utils.getNCharacters(csv, index - 1, eolDelimiterLength) === options.delimiter.eol)) {
+            } else if (character === options.delimiter.wrap && (index === 0 || utils.getNCharacters(csv, index - eolDelimiterLength, eolDelimiterLength) === options.delimiter.eol)) {
                 // If the line starts with a wrap delimiter (ie. "*)
 
                 stateVariables.insideWrapDelimiter = true;
@@ -853,6 +798,19 @@ const Json2Csv = function(options) {
     }
 
     /**
+     * If so specified, this filters the detected key paths to exclude any keys that have been specified
+     * @param keyPaths {Array<String>}
+     * @returns {Array<String>} filtered key paths
+     */
+    function filterExcludedKeys(keyPaths) {
+        if (options.excludeKeys) {
+            return keyPaths.filter((keyPath) => !options.excludeKeys.includes(keyPath));
+        }
+
+        return keyPaths;
+    }
+
+    /**
      * If so specified, this sorts the header field names alphabetically
      * @param fieldNames {Array<String>}
      * @returns {Array<String>} sorted field names, or unsorted if sorting not specified
@@ -900,7 +858,12 @@ const Json2Csv = function(options) {
      * @returns {*}
      */
     function generateCsvHeader(params) {
-        params.header = params.headerFields.join(options.delimiter.field);
+        params.header = params.headerFields
+            .map(function(field) {
+                const headerKey = options.fieldTitleMap[field] ? options.fieldTitleMap[field] : field;
+                return wrapFieldValueIfNecessary(headerKey);
+            })
+            .join(options.delimiter.field);
         return params;
     }
 
@@ -911,13 +874,25 @@ const Json2Csv = function(options) {
      * @returns {Promise}
      */
     function retrieveHeaderFields(data) {
+        if (options.keys) {
+            options.keys = options.keys.map((key) => {
+                if (utils.isObject(key) && key.field) {
+                    options.fieldTitleMap[key.field] = key.title || key.field;
+                    return key.field;
+                }
+                return key;
+            });
+        }
+
         if (options.keys && !options.unwindArrays) {
             return Promise.resolve(options.keys)
+                .then(filterExcludedKeys)
                 .then(sortHeaderFields);
         }
 
         return getFieldNameList(data)
             .then(processSchemas)
+            .then(filterExcludedKeys)
             .then(sortHeaderFields);
     }
 
@@ -928,9 +903,10 @@ const Json2Csv = function(options) {
      *   expandArrayObjects option. If not specified, this passes the params
      *   argument through to the next function in the promise chain.
      * @param params {Object}
+     * @param finalPass {boolean} Used to trigger one last pass to ensure no more arrays need to be expanded
      * @returns {Promise}
      */
-    function unwindRecordsIfNecessary(params) {
+    function unwindRecordsIfNecessary(params, finalPass = false) {
         if (options.unwindArrays) {
             const originalRecordsLength = params.records.length;
 
@@ -949,9 +925,15 @@ const Json2Csv = function(options) {
                     }
                     // Otherwise, we didn't unwind any additional arrays, so continue...
 
+                    // Run a final time in case the earlier unwinding exposed additional
+                    // arrays to unwind...
+                    if (!finalPass) {
+                        return unwindRecordsIfNecessary(params, true);
+                    }
+
                     // If keys were provided, set the headerFields to the provided keys:
                     if (options.keys) {
-                        params.headerFields = options.keys;
+                        params.headerFields = filterExcludedKeys(options.keys);
                     }
                     return params;
                 });
@@ -1043,12 +1025,14 @@ const Json2Csv = function(options) {
      * @returns {*}
      */
     function recordFieldValueToString(fieldValue) {
-        if (Array.isArray(fieldValue) || utils.isObject(fieldValue) && !utils.isDate(fieldValue)) {
+        const isDate = utils.isDate(fieldValue); // store to avoid checking twice
+
+        if (utils.isNull(fieldValue) || Array.isArray(fieldValue) || utils.isObject(fieldValue) && !isDate) {
             return JSON.stringify(fieldValue);
         } else if (utils.isUndefined(fieldValue)) {
             return 'undefined';
-        } else if (utils.isNull(fieldValue)) {
-            return 'null';
+        } else if (isDate && options.useDateIso8601Format) {
+            return fieldValue.toISOString();
         } else {
             return !options.useLocaleFormat ? fieldValue.toString() : fieldValue.toLocaleString();
         }
@@ -1170,7 +1154,8 @@ module.exports = { Json2Csv };
 let path = require('doc-path'),
     constants = require('./constants.json');
 
-const dateStringRegex = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z/;
+const dateStringRegex = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z/,
+    MAX_ARRAY_LENGTH = 100000;
 
 module.exports = {
     isStringRepresentation,
@@ -1204,9 +1189,12 @@ module.exports = {
  */
 function buildOptions(opts) {
     opts = {...constants.defaultOptions, ...opts || {}};
+    opts.fieldTitleMap = new Map();
 
-    // Note: Object.assign does a shallow default, we need to deep copy the delimiter object
-    opts.delimiter = {...constants.defaultOptions.delimiter, ...opts.delimiter};
+    // Copy the delimiter fields over since the spread operator does a shallow copy
+    opts.delimiter.field = opts.delimiter.field || constants.defaultOptions.delimiter.field;
+    opts.delimiter.wrap = opts.delimiter.wrap || constants.defaultOptions.delimiter.wrap;
+    opts.delimiter.eol = opts.delimiter.eol || constants.defaultOptions.delimiter.eol;
 
     // Otherwise, send the options back
     return opts;
@@ -1383,11 +1371,15 @@ function unwindItem(accumulator, item, fieldPath) {
     const valueToUnwind = path.evaluatePath(item, fieldPath);
     let cloned = deepCopy(item);
 
-    if (Array.isArray(valueToUnwind)) {
+    if (Array.isArray(valueToUnwind) && valueToUnwind.length) {
         valueToUnwind.forEach((val) => {
             cloned = deepCopy(item);
             accumulator.push(path.setPath(cloned, fieldPath, val));
         });
+    } else if (Array.isArray(valueToUnwind) && valueToUnwind.length === 0) {
+        // Push an empty string so the value is empty since there are no values
+        path.setPath(cloned, fieldPath, '');
+        accumulator.push(cloned);
     } else {
         accumulator.push(cloned);
     }
@@ -1448,6 +1440,19 @@ function unique(array) {
 }
 
 function flatten(array) {
+    // Node 11+ - use the native array flattening function
+    if (array.flat) {
+        return array.flat();
+    }
+
+    // #167 - allow browsers to flatten very long 200k+ element arrays
+    if (array.length > MAX_ARRAY_LENGTH) {
+        let safeArray = [];
+        for (let a = 0; a < array.length; a += MAX_ARRAY_LENGTH) {
+            safeArray = safeArray.concat(...array.slice(a, a + MAX_ARRAY_LENGTH));
+        }
+        return safeArray;
+    }
     return [].concat(...array);
 }
 
