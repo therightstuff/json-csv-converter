@@ -27,6 +27,6 @@
   "homepage": "https://github.com/therightstuff/json-csv-converter#readme",
   "devDependencies": {
     "browserify": "^17.0.0",
-    "json-2-csv": "^3.11.1"
+    "json-2-csv": "^3.14.1"
   }
 }
