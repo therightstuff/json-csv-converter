@@ -42,7 +42,7 @@ function deepKeysFromList(list, options) {
 function generateDeepKeysList(heading, data, options) {
     let keys = Object.keys(data).map((currentKey) => {
         // If the given heading is empty, then we set the heading to be the subKey, otherwise set it as a nested heading w/ a dot
-        let keyName = buildKeyName(heading, currentKey);
+        let keyName = buildKeyName(heading, escapeNestedDotsIfSpecified(currentKey, options));
 
         // If we have another nested document, recur on the sub-document to retrieve the full key name
         if (isDocumentToRecurOn(data[currentKey])) {
@@ -79,11 +79,18 @@ function processArrayKeys(subArray, currentKeyPath, options) {
             if (isEmptyArray(schemaKeys)) {
                 return [currentKeyPath];
             }
-            return schemaKeys.map((subKey) => buildKeyName(currentKeyPath, subKey));
+            return schemaKeys.map((subKey) => buildKeyName(currentKeyPath, escapeNestedDotsIfSpecified(subKey, options)));
         });
 
         return utils.unique(utils.flatten(subArrayKeys));
     }
+}
+
+function escapeNestedDotsIfSpecified(key, options) {
+    if (options.escapeNestedDots) {
+        return key.replace(/\./g, '\\.');
+    }
+    return key;
 }
 
 /**
@@ -130,6 +137,7 @@ function mergeOptions(options) {
     return {
         expandArrayObjects: false,
         ignoreEmptyArraysWhenExpanding: false,
+        escapeNestedDots: false,
         ...options || {}
     };
 }
@@ -139,12 +147,7 @@ function mergeOptions(options) {
 
 module.exports = {
     // underscore replacements:
-    isString,
     isNull,
-    isError,
-    isDate,
-    isFunction,
-    isUndefined,
     isObject,
     unique,
     flatten
@@ -154,32 +157,12 @@ module.exports = {
  * Helper functions which were created to remove underscorejs from this package.
  */
 
-function isString(value) {
-    return typeof value === 'string';
-}
-
 function isObject(value) {
     return typeof value === 'object';
 }
 
-function isFunction(value) {
-    return typeof value === 'function';
-}
-
 function isNull(value) {
     return value === null;
-}
-
-function isDate(value) {
-    return value instanceof Date;
-}
-
-function isUndefined(value) {
-    return typeof value === 'undefined';
-}
-
-function isError(value) {
-    return Object.prototype.toString.call(value) === '[object Error]';
 }
 
 function unique(array) {
@@ -196,7 +179,7 @@ function flatten(array) {
  * doc-path <https://github.com/mrodrig/doc-path>
  * Copyright (c) 2015-present, Michael Rodrigues.
  */
-"use strict";function evaluatePath(t,r){if(!t)return null;let{dotIndex:e,key:a,remaining:i}=state(r);return e>=0&&!t[r]?Array.isArray(t[a])?t[a].map(t=>evaluatePath(t,i)):evaluatePath(t[a],i):Array.isArray(t)?t.map(t=>evaluatePath(t,r)):t[r]}function setPath(t,r,e){if(!t)throw new Error("No object was provided.");if(!r)throw new Error("No keyPath was provided.");return _sp(t,r,e)}function _sp(t,r,e){let{dotIndex:a,key:i,remaining:n}=state(r);if(r.startsWith("__proto__")||r.startsWith("constructor")||r.startsWith("prototype"))return t;if(a>=0){if(!t[i]&&Array.isArray(t))return t.forEach(t=>_sp(t,r,e));t[i]||(t[i]={}),_sp(t[i],n,e)}else{if(Array.isArray(t))return t.forEach(t=>_sp(t,n,e));t[r]=e}return t}function state(t){let r=t.indexOf(".");return{dotIndex:r,key:t.slice(0,r>=0?r:void 0),remaining:t.slice(r+1)}}module.exports={evaluatePath:evaluatePath,setPath:setPath};
+"use strict";function evaluatePath(t,e){if(!t)return null;let{dotIndex:r,key:a,remaining:n}=state(e);return r>=0&&!t[e]?Array.isArray(t[a])?t[a].map(t=>evaluatePath(t,n)):evaluatePath(t[a],n):Array.isArray(t)?t.map(t=>evaluatePath(t,e)):r>=0&&e!==a&&t[a]?evaluatePath(t[a],n):-1===r&&t[a]&&!t[e]?t[a]:t[e]}function setPath(t,e,r){if(!t)throw new Error("No object was provided.");if(!e)throw new Error("No keyPath was provided.");return _sp(t,e,r)}function _sp(t,e,r){let{dotIndex:a,key:n,remaining:i}=state(e);if(e.startsWith("__proto__")||e.startsWith("constructor")||e.startsWith("prototype"))return t;if(a>=0){if(!t[n]&&Array.isArray(t))return t.forEach(t=>_sp(t,e,r));t[n]||(t[n]={}),_sp(t[n],i,r)}else{if(Array.isArray(t))return t.forEach(t=>_sp(t,i,r));t[n]=r}return t}function state(t){let e=findFirstNonEscapedDotIndex(t);return{dotIndex:e,key:t.slice(0,e>=0?e:void 0).replace(/\\./g,"."),remaining:t.slice(e+1)}}function findFirstNonEscapedDotIndex(t){for(let e=0;e<t.length;e++){const r=e>0?t[e-1]:"";if("."===t[e]&&"\\"!==r)return e}return-1}module.exports={evaluatePath:evaluatePath,setPath:setPath};
 },{}],4:[function(require,module,exports){
 module.exports={
   "errors" : {
@@ -234,7 +217,9 @@ module.exports={
     "expandArrayObjects": false,
     "unwindArrays": false,
     "useDateIso8601Format": false,
-    "useLocaleFormat": false
+    "useLocaleFormat": false,
+    "parseValue": null,
+    "wrapBooleans": false
   },
 
   "values" : {
@@ -323,7 +308,8 @@ let path = require('doc-path'),
 
 const Csv2Json = function(options) {
     const escapedWrapDelimiterRegex = new RegExp(options.delimiter.wrap + options.delimiter.wrap, 'g'),
-        excelBOMRegex = new RegExp('^' + constants.values.excelBOM);
+        excelBOMRegex = new RegExp('^' + constants.values.excelBOM),
+        valueParserFn = options.parseValue && typeof options.parseValue === 'function' ? options.parseValue : JSON.parse;
 
     /**
      * Trims the header key, if specified by the user via the provided options
@@ -672,7 +658,7 @@ const Csv2Json = function(options) {
                 return value;
             }
 
-            let parsedJson = JSON.parse(value);
+            let parsedJson = valueParserFn(value);
 
             // If the parsed value is an array, then we also need to trim record values, if specified
             if (Array.isArray(parsedJson)) {
@@ -724,10 +710,12 @@ let path = require('doc-path'),
 const Json2Csv = function(options) {
     const wrapDelimiterCheckRegex = new RegExp(options.delimiter.wrap, 'g'),
         crlfSearchRegex = /\r?\n|\r/,
+        valueParserFn = options.parseValue && typeof options.parseValue === 'function' ? options.parseValue : recordFieldValueToString,
         expandingWithoutUnwinding = options.expandArrayObjects && !options.unwindArrays,
         deeksOptions = {
             expandArrayObjects: expandingWithoutUnwinding,
-            ignoreEmptyArraysWhenExpanding: expandingWithoutUnwinding
+            ignoreEmptyArraysWhenExpanding: expandingWithoutUnwinding,
+            escapeNestedDots: true
         };
 
     /** HEADER FIELD FUNCTIONS **/
@@ -858,9 +846,12 @@ const Json2Csv = function(options) {
      * @returns {*}
      */
     function generateCsvHeader(params) {
+        // #185 - generate a keys list to avoid finding native Map() methods
+        let fieldTitleMapKeys = Object.keys(options.fieldTitleMap);
+
         params.header = params.headerFields
             .map(function(field) {
-                const headerKey = options.fieldTitleMap[field] ? options.fieldTitleMap[field] : field;
+                const headerKey = fieldTitleMapKeys.includes(field) ? options.fieldTitleMap[field] : field;
                 return wrapFieldValueIfNecessary(headerKey);
             })
             .join(options.delimiter.field);
@@ -962,7 +953,7 @@ const Json2Csv = function(options) {
                 // Process the data in this record and return the
                 processedRecordData = recordFieldData.map((fieldValue) => {
                     fieldValue = trimRecordFieldValue(fieldValue);
-                    fieldValue = recordFieldValueToString(fieldValue);
+                    fieldValue = valueParserFn(fieldValue);
                     fieldValue = wrapFieldValueIfNecessary(fieldValue);
 
                     return fieldValue;
@@ -1074,7 +1065,8 @@ const Json2Csv = function(options) {
         //   then enclose it in quotation marks (wrap delimiter)
         if (fieldValue.includes(options.delimiter.field) ||
             fieldValue.includes(options.delimiter.wrap) ||
-            fieldValue.match(crlfSearchRegex)) {
+            fieldValue.match(crlfSearchRegex) ||
+            options.wrapBooleans && (fieldValue === 'true' || fieldValue === 'false')) {
             // wrap the field's value in a wrap delimiter (quotation marks by default)
             fieldValue = wrapDelimiter + fieldValue + wrapDelimiter;
         }
